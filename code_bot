@@ -1,0 +1,261 @@
+import os
+from PIL import Image
+import telebot
+from telebot import types
+import yt_dlp
+
+TOKEN = "9105300079:AAGEYpkaeN54ziGLMUF5J5HdWmkRvSRi8do"
+bot = telebot.TeleBot(TOKEN)
+
+# قواميس لحفظ الحالات والملفات
+user_images = {}
+user_states = {}
+
+
+@bot.message_handler(commands=["start"])
+def send_welcome(message):
+  user_name = message.from_user.first_name
+  chat_id = message.chat.id
+  user_states[chat_id] = None
+
+  markup = types.InlineKeyboardMarkup(row_width=2)
+  btn_pdf = types.InlineKeyboardButton("📄 عمليات PDF", callback_data="pdf_menu")
+  btn_img = types.InlineKeyboardButton(
+      "🖼️ معالجة الصور", callback_data="img_menu"
+  )
+  btn_dl = types.InlineKeyboardButton(
+      "📥 تحميل ميديا (تيك/انستا/يوتيوب)", callback_data="dl_menu"
+  )
+  btn_help = types.InlineKeyboardButton("ℹ️ المساعدة", callback_data="help")
+  markup.add(btn_pdf, btn_img, btn_dl, btn_help)
+
+  welcome_text = (
+      f"أهلاً بك يا **{user_name}** في بوت المعالجة والتحميل الخارق 🚀\n\n"
+      "أنا بوتك الشخصي المتكامل لإدارة الملفات، الصور، وتحميل الفيديوهات والأغاني.\n"
+      "اختر القسم الذي تريد البدء به من الأزرار أدناه 👇"
+  )
+  bot.send_message(
+      chat_id, welcome_text, parse_mode="Markdown", reply_markup=markup
+  )
+
+
+@bot.callback_query_handler(func=lambda call: True)
+def callback_handler(call):
+  chat_id = call.message.chat.id
+
+  if call.data == "pdf_menu":
+    markup = types.InlineKeyboardMarkup(row_width=1)
+    markup.add(
+        types.InlineKeyboardButton(
+            "📊 تحويل Excel إلى PDF", callback_data="exc_to_pdf"
+        ),
+        types.InlineKeyboardButton(
+            "💧 إضافة علامة مائية", callback_data="watermark"
+        ),
+        types.InlineKeyboardButton(
+            "🔙 القائمة الرئيسية", callback_data="main_menu"
+        ),
+    )
+    bot.edit_message_text(
+        "📄 **قسم عمليات الـ PDF والمستندات:**\nاختر العملية المطلوبة:",
+        chat_id,
+        call.message.message_id,
+        parse_mode="Markdown",
+        reply_markup=markup,
+    )
+
+  elif call.data == "img_menu":
+    user_states[chat_id] = None
+    markup = types.InlineKeyboardMarkup(row_width=1)
+    markup.add(
+        types.InlineKeyboardButton(
+            "🖼️ تحويل الصور إلى PDF", callback_data="img_to_pdf"
+        ),
+        types.InlineKeyboardButton(
+            "✨ إزالة خلفية الصورة", callback_data="remove_bg"
+        ),
+        types.InlineKeyboardButton(
+            "🔙 القائمة الرئيسية", callback_data="main_menu"
+        ),
+    )
+    bot.edit_message_text(
+        "🖼️ **قسم معالجة الصور:**\nاختر الخدمة:",
+        chat_id,
+        call.message.message_id,
+        parse_mode="Markdown",
+        reply_markup=markup,
+    )
+
+  elif call.data == "dl_menu":
+    user_states[chat_id] = "waiting_for_link"
+    markup = types.InlineKeyboardMarkup()
+    markup.add(
+        types.InlineKeyboardButton("🔙 إلغاء والقائمة", callback_data="main_menu")
+    )
+    bot.edit_message_text(
+        "📥 **قسم التحميل الشارق (يوتيوب، تيك توك، إنستغرام):**\n\n"
+        "أرسل لي الآن **رابط الفيديو أو الأغنية** وسأقوم بتحميله وإرساله لك فوراً 🚀",
+        chat_id,
+        call.message.message_id,
+        parse_mode="Markdown",
+        reply_markup=markup,
+    )
+
+  elif call.data == "img_to_pdf":
+    user_states[chat_id] = "waiting_for_images"
+    user_images[chat_id] = []
+    markup = types.InlineKeyboardMarkup()
+    markup.add(
+        types.InlineKeyboardButton(
+            "✅ إنشاء وتحويل الـ PDF الآن", callback_data="generate_pdf"
+        )
+    )
+    markup.add(
+        types.InlineKeyboardButton("🔙 إلغاء والقائمة", callback_data="img_menu")
+    )
+    bot.edit_message_text(
+        "📥 **وضع تحويل الصور إلى PDF:**\n\n"
+        "أرسل الصور واحداً تلو الآخر، ثم اضغط **'إنشاء وتحويل الـ PDF الآن'**.",
+        chat_id,
+        call.message.message_id,
+        parse_mode="Markdown",
+        reply_markup=markup,
+    )
+
+  elif call.data == "generate_pdf":
+    if chat_id in user_images and user_images[chat_id]:
+      bot.answer_callback_query(call.id, "جاري دمج الصور وتوليد الـ PDF...")
+      images_list = user_images[chat_id]
+      try:
+        image_objects = [
+            Image.open(p).convert("RGB") for p in images_list
+        ]
+        pdf_path = f"output_{chat_id}.pdf"
+        image_objects[0].save(
+            pdf_path, save_all=True, append_images=image_objects[1:]
+        )
+        with open(pdf_path, "rb") as f:
+          bot.send_document(
+              chat_id, f, caption="🎉 تفضل! تم إنشاء ملف الـ PDF بنجاح."
+          )
+        for p in images_list:
+          if os.path.exists(p):
+            os.remove(p)
+        if os.path.exists(pdf_path):
+          os.remove(pdf_path)
+        user_images[chat_id] = []
+        user_states[chat_id] = None
+      except Exception as e:
+        bot.send_message(chat_id, f"❌ حدث خطأ: {e}")
+    else:
+      bot.answer_callback_query(
+          call.id, "لم تقم بإرسال أي صور بعد!", show_alert=True
+      )
+
+  elif call.data == "main_menu":
+    user_states[chat_id] = None
+    markup = types.InlineKeyboardMarkup(row_width=2)
+    markup.add(
+        types.InlineKeyboardButton("📄 عمليات PDF", callback_data="pdf_menu"),
+        types.InlineKeyboardButton("🖼️ معالجة الصور", callback_data="img_menu"),
+        types.InlineKeyboardButton(
+            "📥 تحميل ميديا (تيك/انستا/يوتيوب)", callback_data="dl_menu"
+        ),
+        types.InlineKeyboardButton("ℹ️ المساعدة", callback_data="help"),
+    )
+    bot.edit_message_text(
+        "أهلاً بك مرة أخرى في القائمة الرئيسية 🚀\nاختر القسم المناسب:",
+        chat_id,
+        call.message.message_id,
+        parse_mode="Markdown",
+        reply_markup=markup,
+    )
+
+  elif call.data == "help":
+    bot.answer_callback_query(
+        call.id, "هذا بوتك الخارق المبرمج بلغة بايثون!", show_alert=True
+    )
+  else:
+    bot.answer_callback_query(call.id, "قريباً جداً سيتم تفعيل هذه الميزة!")
+
+
+# استقبال الصور
+@bot.message_handler(content_types=["photo"])
+def handle_photos(message):
+  chat_id = message.chat.id
+  if user_states.get(chat_id) == "waiting_for_images":
+    file_id = message.photo[-1].file_id
+    file_info = bot.get_file(file_id)
+    downloaded_file = bot.download_file(file_info.file_path)
+    img_filename = f"img_{chat_id}_{len(user_images.get(chat_id, []))}.jpg"
+    with open(img_filename, "wb") as f:
+      f.write(downloaded_file)
+    if chat_id not in user_images:
+      user_images[chat_id] = []
+    user_images[chat_id].append(img_filename)
+    bot.reply_to(
+        message,
+        f"✅ تم استقبال الصورة (عدد الصور: {len(user_images[chat_id])}). أرسل غيرها أو اضغط إنهاء.",
+    )
+  else:
+    bot.reply_to(message, "الرجاء اختيار 'تحويل الصور إلى PDF' من القائمة أولاً.")
+
+
+# استقبال الروابط للتحميل (تيك توك، انستا، يوتيوب)
+@bot.message_handler(
+    func=lambda msg: user_states.get(msg.chat.id) == "waiting_for_link"
+)
+def handle_download_link(message):
+  chat_id = message.chat.id
+  url = message.text.strip()
+
+  if not url.startswith("http"):
+    bot.reply_to(
+        message, "❌ الرابط غير صحيح، الرجاء إرسال رابط صالح يبدأ بـ http"
+    )
+    return
+
+  msg_wait = bot.reply_to(
+      message, "⏳ جاري المعالجة والتحميل من الرابط، ثوانٍ معدودة..."
+  )
+
+  try:
+    # إعدادات yt_dlp للتحميل بأفضل جودة
+    ydl_opts = {
+        "outtmpl": f"media_{chat_id}.%(ext)s",
+        "format": "best",
+        "noplaylist": True,
+    }
+
+    with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+      info = ydl.extract_info(url, download=True)
+      filename = ydl.prepare_filename(info)
+
+    # إرسال الملف حسب نوعه (فيديو أو صوت)
+    with open(filename, "rb") as f:
+      if filename.endswith((".mp3", ".m4a", ".wav")):
+        bot.send_audio(chat_id, f, caption="🎵 تم تحميل الأغنية/الصوت بنجاح!")
+      else:
+        bot.send_video(chat_id, f, caption="🎥 تم تحميل الفيديو بنجاح!")
+
+    # حذف الملف المؤقت من السيرفر
+    if os.path.exists(filename):
+      os.remove(filename)
+
+    bot.delete_message(chat_id, msg_wait.message_id)
+    user_states[chat_id] = None
+
+  except Exception as e:
+    bot.edit_message_text(
+        f"❌حدث خطأ أثناء التحميل:\n`{str(e)}`",
+        chat_id,
+        msg_wait.message_id,
+        parse_mode="Markdown",
+    )
+
+
+if __name__ == "__main__":
+  print("🔥 البوت الخارق يعمل الآن بكامل الميزات (صور، PDF، تحميل ميديا)...")
+  bot.infinity_polling()
+
+~ $
