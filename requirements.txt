@@ -1,0 +1,12 @@
+pyTelegramBotAPI
+Pillow
+openpyxl
+python-docx
+PyPDF2
+PyMuPDF
+pdf2docx
+pdfplumber
+rembg
+yt_dlp
+gunicorn
+flask
